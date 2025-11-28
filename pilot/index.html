@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StoreFlow AI - 매장 동선 최적화 시뮬레이터</title>
+    <script src="[https://unpkg.com/react@18/umd/react.development.js](https://unpkg.com/react@18/umd/react.development.js)"></script>
+    <script src="[https://unpkg.com/react-dom@18/umd/react-dom.development.js](https://unpkg.com/react-dom@18/umd/react-dom.development.js)"></script>
+    <script src="[https://unpkg.com/@babel/standalone/babel.min.js](https://unpkg.com/@babel/standalone/babel.min.js)"></script>
+    <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
+    <script src="[https://unpkg.com/lucide@latest](https://unpkg.com/lucide@latest)"></script>
+    <script src="https://unpkg.com/lucide-react@latest"></script>
+    <style>
+        @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
+        body { font-family: "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif; }
+        .canvas-grid {
+            background-size: 40px 40px;
+            background-image:
+                linear-gradient(to right, #f0f0f0 1px, transparent 1px),
+                linear-gradient(to bottom, #f0f0f0 1px, transparent 1px);
+        }
+        .animate-pulse-slow {
+            animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-slate-800">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        const { Upload, Play, Pause, RotateCw, Layout, FileText, CheckCircle, AlertTriangle, TrendingUp, Users, ArrowRight, Save, RefreshCw } = lucideReact;
+
+        // --- Mock Data based on User Files ---
+        const MOCK_SALES_DATA = {
+            dailyRevenue: "1,084,600",
+            peakTime: "12:00 - 13:00",
+            topMenu: "더 크리스피 갈비 버거",
+            orderCount: 145
+        };
+
+        const SIMULATION_LOGS = [
+            { time: "12:10:05", event: "주문 접수: 갈비버거 SET (키오스크 1)", type: "order" },
+            { time: "12:10:15", event: "조리 시작: 그릴 섹션 (직원 A)", type: "cook" },
+            { time: "12:10:45", event: "⚠ 동선 충돌 감지: 주방 입구 (직원 A <-> 직원 B)", type: "warning" },
+            { time: "12:12:30", event: "서빙 완료: 테이블 4 (직원 B)", type: "serve" },
+            { time: "12:13:00", event: "퇴식 처리: 테라스 구역 (직원 B)", type: "clear" },
+        ];
+
+        // --- Components ---
+
+        const FileUploadStep = ({ onNext }) => {
+            return (
+                <div className="flex flex-col items-center justify-center h-[600px] border-2 border-dashed border-gray-300 rounded-xl bg-white p-10 hover:bg-gray-50 transition-colors cursor-pointer">
+                    <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mb-6">
+                        <Upload size={40} className="text-blue-600" />
+                    </div>
+                    <h2 className="text-2xl font-bold mb-2">인테리어 도면 업로드</h2>
+                    <p className="text-gray-500 mb-8 text-center max-w-md">
+                        PDF, PNG, JPG 파일을 여기에 드래그하거나 클릭하여 업로드하세요.<br/>
+                        (샘플 파일: 250821-2_슬램버거 대학로점.pdf)
+                    </p>
+                    <button onClick={onNext} className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-blue-700 transition shadow-lg flex items-center gap-2">
+                        샘플 도면으로 시작하기 <ArrowRight size={20}/>
+                    </button>
+                    <div className="mt-8 flex gap-4 text-sm text-gray-400">
+                        <span className="flex items-center gap-1"><FileText size={14}/> Sales DB 자동 연동</span>
+                        <span className="flex items-center gap-1"><FileText size={14}/> Menu DB 자동 연동</span>
+                    </div>
+                </div>
+            );
+        };
+
+        const ProcessingStep = ({ onComplete }) => {
+            const [progress, setProgress] = useState(0);
+            const [status, setStatus] = useState("도면 레이아웃 분석 중...");
+
+            useEffect(() => {
+                const interval = setInterval(() => {
+                    setProgress(prev => {
+                        if (prev >= 100) {
+                            clearInterval(interval);
+                            setTimeout(onComplete, 500);
+                            return 100;
+                        }
+                        if (prev === 30) setStatus("POS 데이터 연동 중 (슬램 대학로 Sales DB)...");
+                        if (prev === 60) setStatus("동선 시뮬레이션 에이전트 생성 중...");
+                        if (prev === 90) setStatus("히트맵 및 효율성 스코어링 계산 중...");
+                        return prev + 1;
+                    });
+                }, 50);
+                return () => clearInterval(interval);
+            }, []);
+
+            return (
+                <div className="flex flex-col items-center justify-center h-[600px] bg-white rounded-xl">
+                    <div className="w-full max-w-md mb-8">
+                         <div className="flex justify-between mb-2 text-sm font-medium text-blue-700">
+                            <span>{status}</span>
+                            <span>{progress}%</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2.5">
+                            <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style={{ width: `${progress}%` }}></div>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4 text-center text-sm text-gray-500 opacity-70">
+                        <div className="p-4 border rounded bg-gray-50">
+                            <Layout className="mx-auto mb-2"/> 벽체/가구 인식
+                        </div>
+                        <div className="p-4 border rounded bg-gray-50">
+                            <TrendingUp className="mx-auto mb-2"/> 매출 데이터 매핑
+                        </div>
+                        <div className="p-4 border rounded bg-gray-50">
+                            <Users className="mx-auto mb-2"/> 직원 동선 예측
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Main Simulation Canvas ---
+        const FloorPlanCanvas = ({ mode, isPlaying, layoutType }) => {
+            const canvasRef = useRef(null);
+            const [agents, setAgents] = useState([]);
+            
+            // Initial Setup based on "Before" or "After" layout
+            const getNodes = (type) => {
+                if (type === 'before') {
+                    // Slam Burger Layout Interpretation (Before)
+                    return {
+                        kitchen: { x: 100, y: 100, w: 100, h: 300, color: '#e2e8f0', label: '주방(Deep)' },
+                        counter: { x: 200, y: 100, w: 50, h: 100, color: '#cbd5e1', label: '픽업' },
+                        hall: { x: 250, y: 100, w: 300, h: 300, color: '#f8fafc', label: '홀' },
+                        terrace: { x: 550, y: 100, w: 100, h: 300, color: '#f1f5f9', label: '테라스' },
+                        tables: [
+                            {x: 300, y: 150}, {x: 300, y: 250}, {x: 400, y: 150}, {x: 400, y: 250}, // Hall
+                            {x: 600, y: 150}, {x: 600, y: 250} // Terrace
+                        ]
+                    };
+                } else {
+                    // Optimized Layout (After)
+                    return {
+                        kitchen: { x: 100, y: 100, w: 120, h: 250, color: '#e2e8f0', label: '주방(Wide)' }, // Wider, shorter kitchen
+                        counter: { x: 220, y: 150, w: 50, h: 150, color: '#cbd5e1', label: '통합카운터' },
+                        hall: { x: 270, y: 100, w: 280, h: 300, color: '#f8fafc', label: '홀' },
+                        terrace: { x: 550, y: 100, w: 100, h: 300, color: '#f1f5f9', label: '테라스' },
+                        tables: [
+                            {x: 320, y: 130}, {x: 320, y: 220}, {x: 320, y: 310}, // Re-arranged
+                            {x: 450, y: 130}, {x: 450, y: 220},
+                            {x: 600, y: 150}, {x: 600, y: 250}
+                        ]
+                    };
+                }
+            };
+
+            useEffect(() => {
+                if (!isPlaying) return;
+                
+                // Initialize Agents
+                const initialAgents = [
+                    { id: 1, type: 'cook', x: 120, y: 120, target: {x: 120, y: 250}, color: 'red' }, // Kitchen Staff
+                    { id: 2, type: 'server', x: 220, y: 120, target: {x: 400, y: 150}, color: 'blue' }, // Hall Staff
+                    { id: 3, type: 'customer', x: 300, y: 300, target: {x: 200, y: 120}, color: 'green' } // Customer
+                ];
+                setAgents(initialAgents);
+
+                const interval = setInterval(() => {
+                    setAgents(prev => prev.map(agent => {
+                        // Simple movement logic towards target
+                        let dx = agent.target.x - agent.x;
+                        let dy = agent.target.y - agent.y;
+                        const dist = Math.sqrt(dx*dx + dy*dy);
+                        
+                        if (dist < 5) {
+                            // Change target randomly within bounds when reached
+                            const nodes = getNodes(layoutType);
+                            let newTarget = {x: 0, y:0};
+                            if(agent.type === 'cook') {
+                                newTarget = { x: nodes.kitchen.x + Math.random() * nodes.kitchen.w, y: nodes.kitchen.y + Math.random() * nodes.kitchen.h };
+                            } else if (agent.type === 'server') {
+                                // Random table or counter
+                                if(Math.random() > 0.5) {
+                                    const table = nodes.tables[Math.floor(Math.random()*nodes.tables.length)];
+                                    newTarget = {x: table.x, y: table.y};
+                                } else {
+                                    newTarget = {x: nodes.counter.x, y: nodes.counter.y};
+                                }
+                            } else {
+                                newTarget = { x: nodes.hall.x + Math.random() * nodes.hall.w, y: nodes.hall.y + Math.random() * nodes.hall.h };
+                            }
+                            return { ...agent, target: newTarget };
+                        }
+
+                        return {
+                            ...agent,
+                            x: agent.x + (dx / dist) * 2, // Speed
+                            y: agent.y + (dy / dist) * 2
+                        };
+                    }));
+                }, 20);
+
+                return () => clearInterval(interval);
+            }, [isPlaying, layoutType]);
+
+            // Drawing Canvas
+            useEffect(() => {
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+                const nodes = getNodes(layoutType);
+
+                // Clear
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // Draw Zones
+                const drawZone = (zone) => {
+                    ctx.fillStyle = zone.color;
+                    ctx.fillRect(zone.x, zone.y, zone.w, zone.h);
+                    ctx.strokeStyle = '#94a3b8';
+                    ctx.strokeRect(zone.x, zone.y, zone.w, zone.h);
+                    ctx.fillStyle = '#64748b';
+                    ctx.font = "12px sans-serif";
+                    ctx.fillText(zone.label, zone.x + 5, zone.y + 20);
+                };
+
+                drawZone(nodes.kitchen);
+                drawZone(nodes.counter);
+                drawZone(nodes.hall);
+                drawZone(nodes.terrace);
+
+                // Draw Tables
+                nodes.tables.forEach(t => {
+                    ctx.fillStyle = '#e5e7eb';
+                    ctx.beginPath();
+                    ctx.arc(t.x, t.y, 15, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                });
+
+                // Draw Heatmap (Simulated visual)
+                if (mode === 'heatmap') {
+                    // Create gradient spots based on "busy" areas
+                    const drawHeat = (x, y, r) => {
+                        const grd = ctx.createRadialGradient(x, y, 5, x, y, r);
+                        grd.addColorStop(0, "rgba(255, 0, 0, 0.4)");
+                        grd.addColorStop(1, "rgba(255, 0, 0, 0)");
+                        ctx.fillStyle = grd;
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    };
+                    
+                    if (layoutType === 'before') {
+                        drawHeat(nodes.kitchen.x + 50, nodes.kitchen.y + 150, 80); // Kitchen Bottleneck
+                        drawHeat(nodes.counter.x, nodes.counter.y + 50, 60); // Counter Bottleneck
+                    } else {
+                        drawHeat(nodes.counter.x, nodes.counter.y + 50, 40); // Reduced Bottleneck
+                    }
+                }
+
+                // Draw Spaghetti (Traces)
+                if (mode === 'spaghetti') {
+                    ctx.strokeStyle = "rgba(0,0,0,0.1)";
+                    ctx.beginPath();
+                    // Just simulated random paths for visual effect
+                    for(let i=0; i<20; i++) {
+                        ctx.moveTo(nodes.kitchen.x+20, nodes.kitchen.y+20);
+                        ctx.bezierCurveTo(300, 200, 200, 300, nodes.terrace.x+20, nodes.terrace.y+50);
+                    }
+                    ctx.stroke();
+                }
+
+                // Draw Agents
+                agents.forEach(agent => {
+                    ctx.fillStyle = agent.color;
+                    ctx.beginPath();
+                    ctx.arc(agent.x, agent.y, 6, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Label
+                    ctx.fillStyle = 'black';
+                    ctx.font = '10px sans-serif';
+                    ctx.fillText(agent.type === 'cook' ? 'C' : agent.type === 'server' ? 'S' : 'K', agent.x+8, agent.y);
+                });
+
+            }, [agents, mode, layoutType]);
+
+            return (
+                <div className="relative border rounded-lg overflow-hidden bg-white shadow-inner canvas-grid">
+                    <canvas ref={canvasRef} width={700} height={500} className="w-full h-full" />
+                    <div className="absolute top-4 left-4 bg-white/90 p-2 rounded shadow text-xs">
+                        <div className="flex items-center gap-2 mb-1"><span className="w-2 h-2 rounded-full bg-red-500"></span> 주방 직원 (Cook)</div>
+                        <div className="flex items-center gap-2 mb-1"><span className="w-2 h-2 rounded-full bg-blue-500"></span> 홀 직원 (Server)</div>
+                        <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-green-500"></span> 고객 (Customer)</div>
+                    </div>
+                </div>
+            );
+        };
+
+        const DashboardStep = () => {
+            const [activeTab, setActiveTab] = useState('before'); // before, after
+            const [viewMode, setViewMode] = useState('normal'); // normal, heatmap, spaghetti
+            const [isPlaying, setIsPlaying] = useState(false);
+
+            return (
+                <div className="h-full flex flex-col">
+                    {/* Header */}
+                    <div className="flex justify-between items-center mb-6">
+                        <div>
+                            <h2 className="text-2xl font-bold flex items-center gap-2">
+                                <span className="bg-blue-600 text-white px-2 py-1 rounded text-sm">BETA</span>
+                                슬램버거 대학로점 분석 리포트
+                            </h2>
+                            <p className="text-gray-500 text-sm mt-1">
+                                분석 일시: 2025-11-28 | 데이터 소스: 슬램 대학로 Sales DB.txt
+                            </p>
+                        </div>
+                        <div className="flex gap-3">
+                            <button className="flex items-center gap-2 px-4 py-2 border rounded hover:bg-gray-50 text-sm font-medium" onClick={() => window.location.reload()}>
+                                <RefreshCw size={16}/> 다시 분석
+                            </button>
+                            <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-bold shadow">
+                                <Save size={16}/> 리포트 다운로드 (PDF)
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="flex gap-6 h-full">
+                        {/* Left Control Panel */}
+                        <div className="w-1/4 flex flex-col gap-4">
+                            {/* Score Card */}
+                            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                                <h3 className="text-sm font-bold text-gray-500 mb-2">동선 효율성 스코어</h3>
+                                <div className="flex items-end gap-2 mb-4">
+                                    <span className={`text-4xl font-bold ${activeTab === 'before' ? 'text-orange-500' : 'text-green-600'}`}>
+                                        {activeTab === 'before' ? '68' : '89'}
+                                    </span>
+                                    <span className="text-gray-400 mb-1">/ 100점</span>
+                                </div>
+                                <div className="text-sm space-y-2">
+                                    <div className="flex justify-between">
+                                        <span>예상 인건비 손실</span>
+                                        <span className="text-red-500 font-bold">
+                                            {activeTab === 'before' ? '- ₩2,100,000/월' : '- ₩320,000/월'}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>피크타임 대기</span>
+                                        <span className="font-medium">
+                                            {activeTab === 'before' ? '24분' : '11분'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Controls */}
+                            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex-1">
+                                <h3 className="font-bold mb-4">시각화 설정</h3>
+                                <div className="space-y-3 mb-6">
+                                    <button 
+                                        onClick={() => setViewMode('normal')}
+                                        className={`w-full text-left px-4 py-3 rounded border transition ${viewMode === 'normal' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 hover:bg-gray-50'}`}
+                                    >
+                                        👀 기본 뷰 (Agents)
+                                    </button>
+                                    <button 
+                                        onClick={() => setViewMode('heatmap')}
+                                        className={`w-full text-left px-4 py-3 rounded border transition ${viewMode === 'heatmap' ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 hover:bg-gray-50'}`}
+                                    >
+                                        🔥 히트맵 (Bottleneck)
+                                    </button>
+                                    <button 
+                                        onClick={() => setViewMode('spaghetti')}
+                                        className={`w-full text-left px-4 py-3 rounded border transition ${viewMode === 'spaghetti' ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-gray-200 hover:bg-gray-50'}`}
+                                    >
+                                        🍜 스파게티 다이어그램
+                                    </button>
+                                </div>
+
+                                <div className="border-t pt-4">
+                                    <h3 className="font-bold mb-2">시뮬레이션 로그</h3>
+                                    <div className="h-40 overflow-y-auto text-xs space-y-2 text-gray-600 bg-gray-50 p-2 rounded">
+                                        {SIMULATION_LOGS.map((log, i) => (
+                                            <div key={i} className={`flex gap-2 ${log.type === 'warning' ? 'text-red-600 font-bold' : ''}`}>
+                                                <span className="text-gray-400">[{log.time}]</span>
+                                                <span>{log.event}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Center Canvas */}
+                        <div className="w-3/4 flex flex-col">
+                            {/* Tabs */}
+                            <div className="flex gap-2 mb-2">
+                                <button 
+                                    onClick={() => setActiveTab('before')}
+                                    className={`px-6 py-2 rounded-t-lg font-bold text-sm transition ${activeTab === 'before' ? 'bg-white text-blue-600 shadow-sm' : 'bg-gray-200 text-gray-500 hover:bg-gray-300'}`}
+                                >
+                                    현재 도면 (Before)
+                                </button>
+                                <button 
+                                    onClick={() => setActiveTab('after')}
+                                    className={`px-6 py-2 rounded-t-lg font-bold text-sm transition ${activeTab === 'after' ? 'bg-white text-green-600 shadow-sm' : 'bg-gray-200 text-gray-500 hover:bg-gray-300'}`}
+                                >
+                                    ✨ 개선 제안 (After)
+                                </button>
+                                <div className="ml-auto flex gap-2">
+                                     <button 
+                                        onClick={() => setIsPlaying(!isPlaying)}
+                                        className="px-4 py-1 bg-gray-800 text-white rounded text-sm hover:bg-black flex items-center gap-2"
+                                    >
+                                        {isPlaying ? <Pause size={14}/> : <Play size={14}/>}
+                                        {isPlaying ? "일시정지" : "시뮬레이션 재생"}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Canvas Wrapper */}
+                            <div className="flex-1 bg-white p-4 rounded-b-xl rounded-tr-xl shadow-sm border border-gray-100">
+                                <FloorPlanCanvas mode={viewMode} isPlaying={isPlaying} layoutType={activeTab} />
+                                
+                                {/* Insights Panel below canvas */}
+                                <div className="mt-4 grid grid-cols-2 gap-4">
+                                    <div className="bg-red-50 p-4 rounded border border-red-100">
+                                        <h4 className="font-bold text-red-800 flex items-center gap-2 mb-2">
+                                            <AlertTriangle size={16}/> 주요 병목 구간 (Before)
+                                        </h4>
+                                        <ul className="text-sm text-red-700 list-disc pl-5 space-y-1">
+                                            <li>주방 깊이(Depth)가 3.5m로 <strong>갈비버거 패티 조리 후 픽업대 이동</strong>에 평균 7초 소요.</li>
+                                            <li>점심 피크(12:00) 테라스 서빙 시 홀 중앙 테이블과 <strong>42회 충돌</strong> 발생.</li>
+                                        </ul>
+                                    </div>
+                                    <div className="bg-green-50 p-4 rounded border border-green-100">
+                                        <h4 className="font-bold text-green-800 flex items-center gap-2 mb-2">
+                                            <CheckCircle size={16}/> 개선 효과 예측
+                                        </h4>
+                                        <ul className="text-sm text-green-700 list-disc pl-5 space-y-1">
+                                            <li>주방 가로 배치 변경으로 <strong>이동 거리 45% 단축</strong>.</li>
+                                            <li>음료 디스펜서 전진 배치로 홀 직원의 주방 진입 횟수 <strong>일 120회 감소</strong>.</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Main App ---
+        const App = () => {
+            const [step, setStep] = useState(1); // 1: Upload, 2: Process, 3: Dashboard
+
+            return (
+                <div className="min-h-screen bg-gray-50 p-8">
+                    {/* Top Nav */}
+                    <nav className="flex justify-between items-center mb-8 px-4">
+                        <div className="flex items-center gap-2 text-blue-700">
+                            <RotateCw className="animate-spin-slow" size={32}/>
+                            <span className="text-2xl font-black tracking-tighter">StoreFlow AI</span>
+                        </div>
+                        <div className="flex gap-4 text-sm font-medium text-gray-500">
+                            <span className={step === 1 ? "text-blue-600" : ""}>1. 도면 업로드</span>
+                            <span>→</span>
+                            <span className={step === 2 ? "text-blue-600" : ""}>2. AI 분석 & 시뮬레이션</span>
+                            <span>→</span>
+                            <span className={step === 3 ? "text-blue-600" : ""}>3. 결과 리포트</span>
+                        </div>
+                    </nav>
+
+                    <div className="max-w-7xl mx-auto">
+                        {step === 1 && <FileUploadStep onNext={() => setStep(2)} />}
+                        {step === 2 && <ProcessingStep onComplete={() => setStep(3)} />}
+                        {step === 3 && <DashboardStep />}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
