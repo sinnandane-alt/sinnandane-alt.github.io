@@ -30,6 +30,11 @@
         .animate-pulse-slow {
             animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #aaa; }
     </style>
 </head>
 <body class="bg-gray-50 text-slate-800">
@@ -52,7 +57,7 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // --- Icons (Inlined to prevent CDN errors) ---
+        // --- Icons (Inlined) ---
         const Icon = ({ children, size = 24, className = "" }) => (
             <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
                 {children}
@@ -72,14 +77,26 @@
         const ArrowRight = (props) => <Icon {...props}><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></Icon>;
         const Save = (props) => <Icon {...props}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></Icon>;
         const RefreshCw = (props) => <Icon {...props}><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></Icon>;
+        const X = (props) => <Icon {...props}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></Icon>;
+        const Info = (props) => <Icon {...props}><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></Icon>;
 
 
         // --- Mock Data ---
-        const MOCK_SALES_DATA = {
-            dailyRevenue: "1,084,600",
-            peakTime: "12:00 - 13:00",
-            topMenu: "더 크리스피 갈비 버거",
-            orderCount: 145
+        const DETAILED_SCORES = {
+            before: [
+                { category: "이동 효율성", score: 12, max: 20, status: "Bad", analysis: "주방 깊이(3.5m)로 인한 조리-픽업 간 불필요한 보행 발생", improvement: "주방 가로 배치 변경으로 이동 거리 단축 필요" },
+                { category: "동선 충돌(혼잡도)", score: 10, max: 20, status: "Bad", analysis: "테라스 서빙 시 홀 중앙 테이블과 동선이 42회 교차됨", improvement: "메인 통로 확보를 위한 테이블 45도 회전 배치" },
+                { category: "주방 작업성", score: 15, max: 20, status: "Normal", analysis: "냉장고-그릴-조리대 배치는 표준이나 간격이 너무 넓음", improvement: "삼각 동선(Work Triangle) 최적화를 위해 기기 간격 조정" },
+                { category: "서비스 신속성", score: 18, max: 25, status: "Normal", analysis: "피크타임(12시) 대기시간 평균 24분 소요", improvement: "음료 디스펜서 전진 배치로 홀 직원 동선 분리" },
+                { category: "공간 활용도", score: 13, max: 15, status: "Good", analysis: "데드 스페이스는 거의 없으나 여유 공간 부족", improvement: "퇴식구 위치 변경으로 입구 혼잡 완화" },
+            ],
+            after: [
+                { category: "이동 효율성", score: 18, max: 20, status: "Good", analysis: "주방 가로 배치로 조리 동선 45% 단축", improvement: "최적화 완료" },
+                { category: "동선 충돌(혼잡도)", score: 18, max: 20, status: "Good", analysis: "중앙 통로 확보로 교차 횟수 5회 미만으로 감소", improvement: "최적화 완료" },
+                { category: "주방 작업성", score: 19, max: 20, status: "Good", analysis: "기기 간격 1.2m 유지로 회전 반경 최적화", improvement: "최적화 완료" },
+                { category: "서비스 신속성", score: 22, max: 25, status: "Good", analysis: "음료/퇴식 동선 분리로 대기시간 11분 단축", improvement: "최적화 완료" },
+                { category: "공간 활용도", score: 12, max: 15, status: "Normal", analysis: "통로 확보로 인해 좌석 수는 유지하되 간격은 좁아짐", improvement: "2인 테이블 활용 제안" },
+            ]
         };
 
         const SIMULATION_LOGS = [
@@ -91,6 +108,88 @@
         ];
 
         // --- Components ---
+
+        // Detailed Score Modal Component
+        const ScoreDetailModal = ({ isOpen, onClose, type }) => {
+            if (!isOpen) return null;
+            const data = DETAILED_SCORES[type];
+            const totalScore = data.reduce((acc, curr) => acc + curr.score, 0);
+
+            return (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full overflow-hidden animate-fade-in">
+                        <div className="p-6 border-b flex justify-between items-center bg-gray-50">
+                            <div>
+                                <h3 className="text-xl font-bold flex items-center gap-2">
+                                    <TrendingUp className="text-blue-600"/> 
+                                    효율성 스코어 상세 분석 리포트
+                                </h3>
+                                <p className="text-sm text-gray-500 mt-1">
+                                    {type === 'before' ? '현재 도면 (Before)' : '개선 제안 (After)'} 기준 평가표
+                                </p>
+                            </div>
+                            <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition">
+                                <X size={24} className="text-gray-500"/>
+                            </button>
+                        </div>
+                        
+                        <div className="p-6">
+                            <div className="flex items-center gap-4 mb-6 bg-blue-50 p-4 rounded-lg border border-blue-100">
+                                <div className="text-4xl font-bold text-blue-700">{totalScore}점</div>
+                                <div className="text-sm text-blue-800">
+                                    <p className="font-bold">종합 평가 코멘트:</p>
+                                    <p>{type === 'before' 
+                                        ? "주방의 구조적 문제로 인해 피크타임 시 심각한 동선 정체가 발생하고 있습니다. 인건비 누수가 우려됩니다." 
+                                        : "병목 구간을 해소하고 동선을 단순화하여 운영 효율이 30% 이상 개선될 것으로 예측됩니다."}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left border-collapse">
+                                    <thead className="bg-gray-100 text-gray-700 uppercase font-bold text-xs">
+                                        <tr>
+                                            <th className="px-4 py-3 border">평가 항목</th>
+                                            <th className="px-4 py-3 border text-center">점수</th>
+                                            <th className="px-4 py-3 border">상세 분석 내용</th>
+                                            <th className="px-4 py-3 border">개선 및 제안 사항</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200">
+                                        {data.map((item, idx) => (
+                                            <tr key={idx} className="hover:bg-gray-50">
+                                                <td className="px-4 py-4 border font-medium text-gray-900 w-32">
+                                                    {item.category}
+                                                </td>
+                                                <td className="px-4 py-4 border text-center w-24">
+                                                    <div className="flex flex-col items-center">
+                                                        <span className={`text-lg font-bold ${item.status === 'Bad' ? 'text-red-500' : item.status === 'Good' ? 'text-green-600' : 'text-yellow-600'}`}>
+                                                            {item.score}
+                                                        </span>
+                                                        <span className="text-xs text-gray-400">/ {item.max}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-4 border text-gray-600 max-w-xs break-keep">
+                                                    {item.analysis}
+                                                </td>
+                                                <td className="px-4 py-4 border text-blue-700 font-medium bg-blue-50/30 max-w-xs break-keep">
+                                                    <Icon size={14} className="inline mr-1"/>{item.improvement}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div className="p-4 border-t bg-gray-50 text-right">
+                            <button onClick={onClose} className="px-6 py-2 bg-gray-800 text-white rounded hover:bg-black text-sm font-bold">
+                                닫기
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
 
         const FileUploadStep = ({ onNext }) => {
             return (
@@ -166,10 +265,8 @@
             const canvasRef = useRef(null);
             const [agents, setAgents] = useState([]);
             
-            // Initial Setup based on "Before" or "After" layout
             const getNodes = (type) => {
                 if (type === 'before') {
-                    // Slam Burger Layout Interpretation (Before)
                     return {
                         kitchen: { x: 100, y: 100, w: 100, h: 300, color: '#e2e8f0', label: '주방(Deep)' },
                         counter: { x: 200, y: 100, w: 50, h: 100, color: '#cbd5e1', label: '픽업' },
@@ -181,14 +278,13 @@
                         ]
                     };
                 } else {
-                    // Optimized Layout (After)
                     return {
-                        kitchen: { x: 100, y: 100, w: 120, h: 250, color: '#e2e8f0', label: '주방(Wide)' }, // Wider, shorter kitchen
+                        kitchen: { x: 100, y: 100, w: 120, h: 250, color: '#e2e8f0', label: '주방(Wide)' },
                         counter: { x: 220, y: 150, w: 50, h: 150, color: '#cbd5e1', label: '통합카운터' },
                         hall: { x: 270, y: 100, w: 280, h: 300, color: '#f8fafc', label: '홀' },
                         terrace: { x: 550, y: 100, w: 100, h: 300, color: '#f1f5f9', label: '테라스' },
                         tables: [
-                            {x: 320, y: 130}, {x: 320, y: 220}, {x: 320, y: 310}, // Re-arranged
+                            {x: 320, y: 130}, {x: 320, y: 220}, {x: 320, y: 310},
                             {x: 450, y: 130}, {x: 450, y: 220},
                             {x: 600, y: 150}, {x: 600, y: 250}
                         ]
@@ -199,29 +295,25 @@
             useEffect(() => {
                 if (!isPlaying) return;
                 
-                // Initialize Agents
                 const initialAgents = [
-                    { id: 1, type: 'cook', x: 120, y: 120, target: {x: 120, y: 250}, color: 'red' }, // Kitchen Staff
-                    { id: 2, type: 'server', x: 220, y: 120, target: {x: 400, y: 150}, color: 'blue' }, // Hall Staff
-                    { id: 3, type: 'customer', x: 300, y: 300, target: {x: 200, y: 120}, color: 'green' } // Customer
+                    { id: 1, type: 'cook', x: 120, y: 120, target: {x: 120, y: 250}, color: 'red' },
+                    { id: 2, type: 'server', x: 220, y: 120, target: {x: 400, y: 150}, color: 'blue' },
+                    { id: 3, type: 'customer', x: 300, y: 300, target: {x: 200, y: 120}, color: 'green' }
                 ];
                 setAgents(initialAgents);
 
                 const interval = setInterval(() => {
                     setAgents(prev => prev.map(agent => {
-                        // Simple movement logic towards target
                         let dx = agent.target.x - agent.x;
                         let dy = agent.target.y - agent.y;
                         const dist = Math.sqrt(dx*dx + dy*dy);
                         
                         if (dist < 5) {
-                            // Change target randomly within bounds when reached
                             const nodes = getNodes(layoutType);
                             let newTarget = {x: 0, y:0};
                             if(agent.type === 'cook') {
                                 newTarget = { x: nodes.kitchen.x + Math.random() * nodes.kitchen.w, y: nodes.kitchen.y + Math.random() * nodes.kitchen.h };
                             } else if (agent.type === 'server') {
-                                // Random table or counter
                                 if(Math.random() > 0.5) {
                                     const table = nodes.tables[Math.floor(Math.random()*nodes.tables.length)];
                                     newTarget = {x: table.x, y: table.y};
@@ -236,7 +328,7 @@
 
                         return {
                             ...agent,
-                            x: agent.x + (dx / dist) * 2, // Speed
+                            x: agent.x + (dx / dist) * 2,
                             y: agent.y + (dy / dist) * 2
                         };
                     }));
@@ -245,16 +337,13 @@
                 return () => clearInterval(interval);
             }, [isPlaying, layoutType]);
 
-            // Drawing Canvas
             useEffect(() => {
                 const canvas = canvasRef.current;
                 const ctx = canvas.getContext('2d');
                 const nodes = getNodes(layoutType);
 
-                // Clear
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-                // Draw Zones
                 const drawZone = (zone) => {
                     ctx.fillStyle = zone.color;
                     ctx.fillRect(zone.x, zone.y, zone.w, zone.h);
@@ -270,7 +359,6 @@
                 drawZone(nodes.hall);
                 drawZone(nodes.terrace);
 
-                // Draw Tables
                 nodes.tables.forEach(t => {
                     ctx.fillStyle = '#e5e7eb';
                     ctx.beginPath();
@@ -279,9 +367,7 @@
                     ctx.stroke();
                 });
 
-                // Draw Heatmap (Simulated visual)
                 if (mode === 'heatmap') {
-                    // Create gradient spots based on "busy" areas
                     const drawHeat = (x, y, r) => {
                         const grd = ctx.createRadialGradient(x, y, 5, x, y, r);
                         grd.addColorStop(0, "rgba(255, 0, 0, 0.4)");
@@ -291,18 +377,16 @@
                     };
                     
                     if (layoutType === 'before') {
-                        drawHeat(nodes.kitchen.x + 50, nodes.kitchen.y + 150, 80); // Kitchen Bottleneck
-                        drawHeat(nodes.counter.x, nodes.counter.y + 50, 60); // Counter Bottleneck
+                        drawHeat(nodes.kitchen.x + 50, nodes.kitchen.y + 150, 80);
+                        drawHeat(nodes.counter.x, nodes.counter.y + 50, 60);
                     } else {
-                        drawHeat(nodes.counter.x, nodes.counter.y + 50, 40); // Reduced Bottleneck
+                        drawHeat(nodes.counter.x, nodes.counter.y + 50, 40);
                     }
                 }
 
-                // Draw Spaghetti (Traces)
                 if (mode === 'spaghetti') {
                     ctx.strokeStyle = "rgba(0,0,0,0.1)";
                     ctx.beginPath();
-                    // Just simulated random paths for visual effect
                     for(let i=0; i<20; i++) {
                         ctx.moveTo(nodes.kitchen.x+20, nodes.kitchen.y+20);
                         ctx.bezierCurveTo(300, 200, 200, 300, nodes.terrace.x+20, nodes.terrace.y+50);
@@ -310,13 +394,11 @@
                     ctx.stroke();
                 }
 
-                // Draw Agents
                 agents.forEach(agent => {
                     ctx.fillStyle = agent.color;
                     ctx.beginPath();
                     ctx.arc(agent.x, agent.y, 6, 0, Math.PI * 2);
                     ctx.fill();
-                    // Label
                     ctx.fillStyle = 'black';
                     ctx.font = '10px sans-serif';
                     ctx.fillText(agent.type === 'cook' ? 'C' : agent.type === 'server' ? 'S' : 'K', agent.x+8, agent.y);
@@ -337,12 +419,13 @@
         };
 
         const DashboardStep = () => {
-            const [activeTab, setActiveTab] = useState('before'); // before, after
-            const [viewMode, setViewMode] = useState('normal'); // normal, heatmap, spaghetti
+            const [activeTab, setActiveTab] = useState('before');
+            const [viewMode, setViewMode] = useState('normal');
             const [isPlaying, setIsPlaying] = useState(false);
+            const [showScoreModal, setShowScoreModal] = useState(false);
 
             return (
-                <div className="h-full flex flex-col">
+                <div className="h-full flex flex-col relative">
                     {/* Header */}
                     <div className="flex justify-between items-center mb-6">
                         <div>
@@ -367,9 +450,17 @@
                     <div className="flex gap-6 h-full">
                         {/* Left Control Panel */}
                         <div className="w-1/4 flex flex-col gap-4">
-                            {/* Score Card */}
-                            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                                <h3 className="text-sm font-bold text-gray-500 mb-2">동선 효율성 스코어</h3>
+                            {/* Score Card (Clickable) */}
+                            <div 
+                                onClick={() => setShowScoreModal(true)}
+                                className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition group relative overflow-hidden"
+                            >
+                                <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <span className="text-xs bg-gray-900 text-white px-2 py-1 rounded">클릭하여 상세 보기</span>
+                                </div>
+                                <h3 className="text-sm font-bold text-gray-500 mb-2 flex items-center gap-1">
+                                    동선 효율성 스코어 <Info size={14}/>
+                                </h3>
                                 <div className="flex items-end gap-2 mb-4">
                                     <span className={`text-4xl font-bold ${activeTab === 'before' ? 'text-orange-500' : 'text-green-600'}`}>
                                         {activeTab === 'before' ? '68' : '89'}
@@ -389,6 +480,11 @@
                                             {activeTab === 'before' ? '24분' : '11분'}
                                         </span>
                                     </div>
+                                </div>
+                                <div className="mt-4 pt-3 border-t text-center">
+                                    <span className="text-blue-600 text-sm font-bold flex items-center justify-center gap-1">
+                                        상세 분석 표 보기 <ArrowRight size={14}/>
+                                    </span>
                                 </div>
                             </div>
 
@@ -485,13 +581,20 @@
                             </div>
                         </div>
                     </div>
+
+                    {/* Detailed Score Modal */}
+                    <ScoreDetailModal 
+                        isOpen={showScoreModal} 
+                        onClose={() => setShowScoreModal(false)} 
+                        type={activeTab}
+                    />
                 </div>
             );
         };
 
         // --- Main App ---
         const App = () => {
-            const [step, setStep] = useState(1); // 1: Upload, 2: Process, 3: Dashboard
+            const [step, setStep] = useState(1);
 
             return (
                 <div className="min-h-screen bg-gray-50 p-8">
